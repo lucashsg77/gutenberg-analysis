@@ -1,15 +1,20 @@
 services:
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - PORT=8000
+      - ALLOWED_ORIGINS=http://localhost:3000
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
     restart: unless-stopped
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -17,6 +22,9 @@ services:
 
   frontend:
     build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: build
       args:
         - NEXT_PUBLIC_API_URL=http://localhost:8000
     environment:
