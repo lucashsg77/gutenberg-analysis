@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 
@@ -59,12 +60,36 @@ class TestAPI:
     @patch.object(gutenberg.GutenbergAPI, 'get_book_metadata')
     @patch.object(gutenberg.GutenbergAPI, 'get_book_content')
     @patch.object(gutenberg.GutenbergAPI, 'clean_book_content')
-    def test_get_book_endpoint_success(self, mock_clean, mock_get_content, mock_get_metadata):
-        """Test successful book retrieval"""
+    @patch('app.process_book_fetch')
+    def test_get_book_endpoint_start(self, mock_process, mock_clean, mock_get_content, mock_get_metadata):
+        """Test book fetch initiation"""
         mock_get_metadata.return_value = (self.sample_book_data["metadata"], None)
         mock_get_content.return_value = ("Raw content", None)
         mock_clean.return_value = "Cleaned content"
+        mock_process.return_value = None
 
+        with patch('app.book_fetch_tasks', {}) as mock_tasks:
+            response = client.post(
+                "/api/book",
+                json={"book_id": self.test_book_id}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "processing"
+            assert "Book fetch started" in data["message"]
+            assert data["book_id"] == self.test_book_id
+
+    @patch('app.book_fetch_tasks')
+    def test_get_book_endpoint_already_processing(self, mock_book_fetch_tasks):
+        """Test book fetch when already in progress"""
+        mock_book_fetch_tasks.__contains__.return_value = True
+        mock_book_fetch_tasks.__getitem__.return_value = {
+            "status": "processing", 
+            "progress": 50,
+            "message": "Downloading content..."
+        }
+        
         response = client.post(
             "/api/book",
             json={"book_id": self.test_book_id}
@@ -72,32 +97,48 @@ class TestAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["metadata"]["title"] == "Romeo and Juliet"
-        assert data["metadata"]["author"] == "William Shakespeare"
-        assert "content_preview" in data
-        assert "content_length" in data
-        assert "full_content" not in data
+        assert data["status"] == "processing"
+        assert "in progress" in data["message"].lower()
+
+    @patch('app.book_cache')
+    def test_get_book_endpoint_already_cached(self, mock_book_cache):
+        """Test book fetch when book is already cached"""
+        mock_book_cache.__contains__.return_value = True
+        
+        response = client.post(
+            "/api/book",
+            json={"book_id": self.test_book_id}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "complete"
+        assert "available" in data["message"].lower()
 
     @patch.object(gutenberg.GutenbergAPI, 'get_book_metadata')
     def test_get_book_endpoint_error(self, mock_get_metadata):
         """Test book retrieval with error"""
         mock_get_metadata.return_value = ({}, "Book not found")
 
-        response = client.post(
-            "/api/book",
-            json={"book_id": "999999999"}
-        )
+        with patch('app.book_cache', {}), patch('app.book_fetch_tasks', {}):
+            response = client.post(
+                "/api/book",
+                json={"book_id": "999999999"}
+            )
 
-        assert response.status_code == 404
-        assert "detail" in response.json()
-        assert "Book not found" in response.json()["detail"]
+            assert response.status_code == 200
+            assert "status" in response.json()
+            assert response.json()["status"] == "processing"
 
     @patch('app.book_cache')
     @patch('app.analysis_tasks')  
-    @patch('fastapi.BackgroundTasks.add_task')
-    def test_analyze_book_endpoint_start(self, mock_add_task, mock_analysis_tasks, mock_book_cache):
+    @patch('app.process_book_analysis_incremental')
+    def test_analyze_book_endpoint_start(self, mock_process, mock_analysis_tasks, mock_book_cache):
+        """Test starting book analysis"""
+        mock_book_cache.__contains__.return_value = True
         mock_book_cache.__getitem__.return_value = self.sample_book_data
         mock_analysis_tasks.__contains__.return_value = False
+        mock_process.return_value = None
         
         response = client.post(
             "/api/analyze",
@@ -108,7 +149,67 @@ class TestAPI:
         data = response.json()
         assert data["status"] == "processing"
         assert "Analysis started" in data["message"]
-        mock_add_task.assert_called_once()
+
+    @patch('app.book_cache')
+    @patch('app.analysis_tasks')
+    def test_analyze_book_endpoint_already_processing(self, mock_analysis_tasks, mock_book_cache):
+        """Test analyze endpoint when analysis is already in progress"""
+        mock_book_cache.__contains__.return_value = True
+        mock_analysis_tasks.__contains__.return_value = True
+        mock_analysis_tasks.__getitem__.return_value = {
+            "status": "processing",
+            "progress": 50,
+            "message": "Analyzing characters..."
+        }
+        
+        response = client.post(
+            "/api/analyze",
+            json={"book_id": self.test_book_id}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "processing"
+        assert "already in progress" in data["message"].lower()
+
+    @patch('app.analysis_cache')
+    @patch('app.book_cache')
+    def test_analyze_book_endpoint_already_complete(self, mock_book_cache, mock_analysis_cache):
+        """Test analyze endpoint when analysis is already complete"""
+        mock_book_cache.__contains__.return_value = True
+        mock_analysis_cache.__contains__.return_value = True
+        
+        response = client.post(
+            "/api/analyze",
+            json={"book_id": self.test_book_id}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "complete"
+        assert "complete" in data["message"].lower()
+
+    @patch('app.book_cache')
+    @patch('app.book_fetch_tasks')
+    def test_analyze_book_endpoint_waiting_for_book(self, mock_book_fetch_tasks, mock_book_cache):
+        """Test analyze endpoint when book fetch is still in progress"""
+        mock_book_cache.__contains__.return_value = False
+        mock_book_fetch_tasks.__contains__.return_value = True
+        mock_book_fetch_tasks.__getitem__.return_value = {
+            "status": "processing",
+            "progress": 50,
+            "message": "Downloading content..."
+        }
+        
+        response = client.post(
+            "/api/analyze",
+            json={"book_id": self.test_book_id}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "waiting_for_book"
+        assert "waiting for book" in data["message"].lower()
 
     @patch('app.analysis_tasks')
     def test_analysis_status_endpoint(self, mock_analysis_tasks):
@@ -179,14 +280,14 @@ class TestAPI:
             json={"book_id": ""}
         )
 
-        assert response.status_code == 404 or response.status_code == 400
-
+        assert response.status_code == 422 or response.status_code == 200
+        
         response = client.post(
             "/api/book",
             json={"book_id": "a" * 1000}
         )
 
-        assert response.status_code == 404 or response.status_code == 422
+        assert response.status_code == 422 or response.status_code == 200
 
     def test_request_validation(self):
         """Test request validation"""
@@ -203,7 +304,112 @@ class TestAPI:
             json={"book_id": 1787}
         )
 
-        assert response.status_code in [200, 422]
+        assert response.status_code == 422 or response.status_code == 200
         
         if response.status_code == 422:
             assert "detail" in response.json()
+
+    @patch('app.active_tasks')
+    def test_active_tasks_endpoint(self, mock_active_tasks):
+        """Test the active tasks debug endpoint"""
+        mock_active_tasks.__len__.return_value = 2
+        mock_active_tasks.__iter__.return_value = iter(["task1", "task2"])
+        
+        with patch('app.book_fetch_tasks', {"book1": {}}), patch('app.analysis_tasks', {"book1": {}, "book2": {}}):
+            response = client.get("/api/active-tasks")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["active_task_count"] == 2
+            assert len(data["active_tasks"]) == 2
+            assert data["book_fetch_tasks"] == 1
+            assert data["analysis_tasks"] == 2
+
+    @patch('app.book_cache')
+    def test_book_fetch_status_endpoint_complete(self, mock_book_cache):
+        """Test book fetch status endpoint with completed fetch"""
+        mock_book_cache.__contains__.return_value = True
+        
+        response = client.get(f"/api/book-fetch-status/{self.test_book_id}")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "complete"
+        assert data["progress"] == 100
+
+    @patch('app.book_cache')
+    @patch('app.book_fetch_tasks')
+    def test_book_fetch_status_endpoint_processing(self, mock_book_fetch_tasks, mock_book_cache):
+        """Test book fetch status endpoint with in-progress fetch"""
+        mock_book_cache.__contains__.return_value = False
+        mock_book_fetch_tasks.__contains__.return_value = True
+        mock_book_fetch_tasks.__getitem__.return_value = {
+            "status": "processing",
+            "progress": 75,
+            "message": "Cleaning content..."
+        }
+        
+        response = client.get(f"/api/book-fetch-status/{self.test_book_id}")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "processing"
+        assert data["progress"] == 75
+        assert "cleaning content" in data["message"].lower()
+
+    @patch('app.book_cache')
+    @patch('app.book_fetch_tasks')
+    def test_book_fetch_status_endpoint_not_found(self, mock_book_fetch_tasks, mock_book_cache):
+        """Test book fetch status endpoint with no fetch found"""
+        mock_book_cache.__contains__.return_value = False
+        mock_book_fetch_tasks.__contains__.return_value = False
+        
+        response = client.get(f"/api/book-fetch-status/{self.test_book_id}")
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "not_found"
+        assert "no fetch operation found" in data["message"].lower()
+
+    def test_book_content_endpoint(self):
+        """Test getting book content"""
+        with patch('app.book_cache', {self.test_book_id: self.sample_book_data}):
+            response = client.get(f"/api/book-content/{self.test_book_id}")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert "metadata" in data
+            assert "content_preview" in data
+            assert "full_content" in data
+            assert data["metadata"]["title"] == "Romeo and Juliet"
+
+    def test_book_content_endpoint_not_found(self):
+        """Test getting book content that doesn't exist"""
+        with patch('app.book_cache', {}), patch('app.book_fetch_tasks', {}):
+            response = client.get(f"/api/book-content/99999")
+            
+            assert response.status_code == 404
+
+    def test_book_content_endpoint_in_progress(self):
+        """Test getting book content while fetch is in progress"""
+        with patch('app.book_cache', {}), patch('app.book_fetch_tasks', {'99999': {'status': 'processing'}}):
+            response = client.get(f"/api/book-content/99999")
+            
+            assert response.status_code == 202
+            assert "still in progress" in response.json()["detail"].lower()
+   
+    @pytest.mark.asyncio
+    async def test_stream_fetch_updates_endpoint(self):
+        """Test streaming book fetch updates endpoint"""
+        response = client.get(f"/api/fetch-stream/{self.test_book_id}")
+        
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+
+    @pytest.mark.asyncio
+    async def test_stream_analysis_updates_endpoint(self):
+        """Test streaming analysis updates endpoint"""
+        response = client.get(f"/api/analysis-stream/{self.test_book_id}")
+        
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]

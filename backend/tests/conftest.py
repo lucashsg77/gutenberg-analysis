@@ -1,6 +1,6 @@
 import pytest
 import os
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 @pytest.fixture(autouse=True)
 def mock_env_variables():
@@ -101,3 +101,36 @@ def sample_analysis_data():
         "sentiment": {"overall": "mixed", "analysis": "Analysis"},
         "key_quotes": [{"quote": "Quote", "speaker": "Romeo", "context": "Context", "significance": "Significance"}]
     }
+
+@pytest.fixture
+def mock_aiohttp_session():
+    """Mock aiohttp ClientSession for async tests"""
+    mock_session = AsyncMock()
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text = AsyncMock(return_value="Mock response text")
+    
+    mock_session.get.return_value.__aenter__.return_value = mock_response
+    return mock_session
+
+
+class MockStreamResponse:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        
+    def __iter__(self):
+        return iter(self.chunks)
+
+@pytest.fixture
+def mock_groq_stream_response():
+    """Mock a streaming response from Groq API"""
+    from unittest.mock import MagicMock
+    import json
+    
+    mock_chunk1 = MagicMock()
+    mock_chunk1.choices = [MagicMock(delta=MagicMock(content='{"partial": "response'))]
+    
+    mock_chunk2 = MagicMock()
+    mock_chunk2.choices = [MagicMock(delta=MagicMock(content=', "more": "data"}'))]
+    
+    return MockStreamResponse([mock_chunk1, mock_chunk2])
