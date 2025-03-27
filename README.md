@@ -13,7 +13,7 @@ A web application that allows users to explore and analyze books from Project Gu
 
 ## Live Demo
 
-[View the live application](https://your-deployment-url.com)
+[View the live application](https://gutenberg-analysis-frontend.fly.dev/)
 
 ## Tech Stack
 
@@ -37,6 +37,7 @@ gutenberg-analysis/
 ├── README.md
 ├── backend
 │   ├── Dockerfile
+│   ├── fly.toml
 │   ├── __init__.py
 │   ├── analysis.py
 │   ├── app.py
@@ -51,6 +52,7 @@ gutenberg-analysis/
 ├── docker-compose.yml
 └── frontend
     ├── Dockerfile
+    ├── fly.toml
     ├── components
     │   ├── BookAnalysis.tsx
     │   ├── BookFetchingState.tsx
@@ -163,8 +165,6 @@ For a containerized setup, you can use Docker Compose:
    ```
 
    The application will be available at http://localhost:3000
-
-For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## How It Works
 
