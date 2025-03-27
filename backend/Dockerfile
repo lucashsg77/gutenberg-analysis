@@ -2,12 +2,14 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
 RUN python -c "import nltk; nltk.download('punkt')"
+
+ENV ALLOWED_ORIGINS="https://gutenberg-analysis-frontend.fly.dev"
 
 EXPOSE 8000
 

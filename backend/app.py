@@ -20,12 +20,19 @@ load_dotenv()
 
 app = FastAPI(title="Gutenberg Book Analysis API")
 
+origins = os.getenv("ALLOWED_ORIGINS", "*")
+print(f"CORS origins configured: {origins}")
+
+origins_list = [origin.strip() for origin in origins.split(",") if origin.strip()]
+print(f"Parsed origins: {origins_list}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=origins_list,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=86400,
 )
 
 gutenberg_api = GutenbergAPI()
@@ -178,6 +185,8 @@ async def get_book(request: BookRequest):
         "message": f"Starting book fetch for ID {book_id}",
         "stage": "fetch_init"
     }
+
+    await asyncio.sleep(0.5)  
 
     task_id = f"book_fetch_{book_id}"
     if task_id not in active_tasks:

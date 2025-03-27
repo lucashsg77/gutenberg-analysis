@@ -59,7 +59,7 @@ export class BookFetchEventStream {
 
   public connect(): void {
     if (this.connected) return;
-
+  
     try {
       const url = `${this.apiUrl}/api/fetch-stream/${this.bookId}`;
       console.log(`Connecting to book fetch stream at: ${url}`);
@@ -76,8 +76,18 @@ export class BookFetchEventStream {
           const data = JSON.parse(event.data);
           console.log('Book fetch stream update:', data);
 
-          this.callbacks.forEach(callback => callback(data));
+          if (data.status === 'not_found') {
+            console.log('Book fetch task not found, retrying in 1 second...');
+            this.disconnect();
 
+            setTimeout(() => {
+              this.connect();
+            }, 1000);
+            return;
+          }
+  
+          this.callbacks.forEach(callback => callback(data));
+  
           if (data.status === 'complete' || data.status === 'error') {
             this.disconnect();
           }

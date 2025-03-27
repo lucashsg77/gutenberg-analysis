@@ -75,8 +75,8 @@ const BookHistory: React.FC<BookHistoryProps> = ({ onSelect, disabled }) => {
               onClick={() => onSelect(book.id)}
               disabled={disabled}
             >
-              <div className="flex flex-col items-start">
-                <span className="font-medium truncate max-w-full">
+              <div className="flex flex-col items-start w-full overflow-hidden">
+                <span className="font-medium truncate w-full block">
                   {book.title || `Book #${book.id}`}
                 </span>
                 <span className="text-xs text-muted-foreground">
