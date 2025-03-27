@@ -16,4 +16,4 @@ httpx
 bs4
 asyncio
 aiohttp
-gunicorn
+pytest-asyncio
