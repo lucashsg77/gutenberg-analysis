@@ -1,0 +1,25 @@
+# fly.toml app configuration file generated for gutenberg-analysis-backend on 2025-03-27T17:01:12-03:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'gutenberg-analysis-backend'
+primary_region = 'gru'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  ALLOWED_ORIGINS = "https://gutenberg-analysis-frontend.fly.dev"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
