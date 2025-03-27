@@ -1,0 +1,41 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Next.js build files
+.next/
+out/
+
+# TypeScript build files
+*.tsbuildinfo
+
+# Python dependencies
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Docker
+*.dockerignore
+dist/
+
+# Logs
+logs/
+*.log
+
+# Testing
+coverage/
+pytest_cache/
+
+# Environment variables
+.env
+.env.local
+
+# Miscellaneous
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
